@@ -9,5 +9,8 @@ data/bulk-tax-documents/
 .env.local
 .env.*.local
 
+# vscode
 .devcontainer
 .vscode
+__debug_bin*
+
