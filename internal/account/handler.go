@@ -10,6 +10,7 @@ import (
 
 	"github.com/bootdotdev/learn-web-security/internal/accounts"
 	"github.com/bootdotdev/learn-web-security/internal/auth/mfa"
+	"github.com/bootdotdev/learn-web-security/internal/auth/passwords"
 	"github.com/bootdotdev/learn-web-security/internal/auth/sessions"
 	"github.com/bootdotdev/learn-web-security/internal/httpx"
 	"github.com/bootdotdev/learn-web-security/internal/logging"
@@ -76,11 +77,32 @@ func (handler *Handler) UpdateEmail(responseWriter http.ResponseWriter, request 
 	if !ok || !handler.verifyCSRF(responseWriter, request, current.Session.CSRFToken) {
 		return
 	}
+
+	pw, pwErr := httpx.FormValue(request, "currentPassword")
+	if pwErr != nil || pw == "" || !passwords.Verify(pw, current.User.PasswordHash) {
+		handler.errorPage(responseWriter, http.StatusForbidden, "Invalid Request", "Re-enter your current password to change your email.")
+		return
+	}
+
 	email, emailErr := httpx.FormValue(request, "email")
 	if emailErr != nil {
 		handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
 		return
 	}
+
+	// currentPassword, passwordErr := httpx.FormValue(request, "currentPassword")
+	// email, emailErr := httpx.FormValue(request, "email")
+	// if passwordErr != nil || emailErr != nil {
+	// 	handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
+	// 	return
+	// }
+	// if currentPassword == "" || !passwords.Verify(currentPassword, current.User.PasswordHash) {
+	// 	if err := handler.renderPage(responseWriter, http.StatusForbidden, current, "Re-enter your current password to change your email."); err != nil {
+	// 		handler.internalError(responseWriter, request, err)
+	// 	}
+	// 	return
+	// }
+
 	email = accounts.NormalizeEmail(email)
 	if email == "" {
 		if err := handler.renderPage(responseWriter, http.StatusBadRequest, current, "Email is required."); err != nil {
