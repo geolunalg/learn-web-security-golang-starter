@@ -1,6 +1,7 @@
 package checkout
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -103,13 +104,18 @@ func (handler *Handler) Submit(responseWriter http.ResponseWriter, request *http
 		handler.renderCheckoutError(responseWriter, request, http.StatusBadRequest, current, items, "All shipping fields are required")
 		return
 	}
-	_, err = acorn.Reserve(request.Context(), acorn.Request{
+	_, err = acorn.ReserveWithTimeout(request.Context(), acorn.Request{
 		Name:       shippingDetails.Name,
 		Address:    shippingDetails.Address,
 		City:       shippingDetails.City,
 		Region:     shippingDetails.Region,
 		PostalCode: shippingDetails.PostalCode,
 	}, handler.fulfillmentDelay)
+	if errors.Is(err, context.DeadlineExceeded) {
+		responseWriter.Header().Set("Retry-After", "1")
+		handler.renderCheckoutError(responseWriter, request, http.StatusServiceUnavailable, current, items, "Shipping is temporarily unavailable. Try again shortly.")
+		return
+	}
 	if err != nil {
 		handler.internalError(responseWriter, request, err)
 		return
@@ -154,19 +160,6 @@ func (handler *Handler) Submit(responseWriter http.ResponseWriter, request *http
 		"adminNotes":         checkoutAdminNotes,
 	})
 	http.Redirect(responseWriter, request, pawpal.CreateCheckoutURL(order.ID), http.StatusFound)
-}
-
-func (handler *Handler) verifyCSRF(responseWriter http.ResponseWriter, request *http.Request, expectedToken string) bool {
-	actualToken, err := httpx.FormValue(request, "csrfToken")
-	if err != nil {
-		handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
-		return false
-	}
-	if sessions.CSRFTokensMatch(expectedToken, actualToken) {
-		return true
-	}
-	handler.errorPage(responseWriter, http.StatusForbidden, "Forbidden", "Your request could not be verified.")
-	return false
 }
 
 func (handler *Handler) Processing(responseWriter http.ResponseWriter, request *http.Request) {
@@ -243,6 +236,19 @@ func (handler *Handler) requireAuth(responseWriter http.ResponseWriter, request 
 		return accounts.CurrentSession{}, false
 	}
 	return current, found
+}
+
+func (handler *Handler) verifyCSRF(responseWriter http.ResponseWriter, request *http.Request, expectedToken string) bool {
+	actualToken, err := httpx.FormValue(request, "csrfToken")
+	if err != nil {
+		handler.errorPage(responseWriter, http.StatusBadRequest, "Invalid Request", "The submitted form is invalid.")
+		return false
+	}
+	if sessions.CSRFTokensMatch(expectedToken, actualToken) {
+		return true
+	}
+	handler.errorPage(responseWriter, http.StatusForbidden, "Forbidden", "Your request could not be verified.")
+	return false
 }
 
 func (handler *Handler) orderNotFound(responseWriter http.ResponseWriter) {
