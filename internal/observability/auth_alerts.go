@@ -3,6 +3,7 @@ package observability
 import (
 	"sync"
 	"time"
+	"uuid"
 
 	"github.com/bootdotdev/learn-web-security/internal/logging"
 )
@@ -36,7 +37,7 @@ func NewAuthAlertThreshold(signal string, threshold int, window time.Duration, l
 	}
 }
 
-func (threshold *AuthAlertThreshold) Record(requestID, sourceIP string, userID any) {
+func (threshold *AuthAlertThreshold) Record(requestID uuid.UUID, sourceIP string, userID any) {
 	now := threshold.now()
 	threshold.mutex.Lock()
 	if !now.Before(threshold.nextSweepAt) {
